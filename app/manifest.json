@@ -1,0 +1,42 @@
+{
+    "$schema": "https://raw.githubusercontent.com/FASTGenomics/fastgenomics-py/v1.0.0/fastgenomics/schemes/manifest_schema.json",
+    "application": {
+        "name": "FASTGenomics/ LIMES standard workflow",
+        "author": {
+            "name": "Team FASTGenomics and Stefanie Herresthal",
+            "email": "team@fastgenomics.org",
+            "organisation": "FASTGenomics and LIMES"
+        },
+        "description": "FASTGenomics/ LIMES standard workflow based on Seurat",
+        "parameters": {},
+        "demands": [],
+        "input": {
+            "expression_matrix": {
+                "type": "expression_matrix",
+                "usage": "Expression matrix"
+            },
+            "cell_metadata": {
+                "type": "cell_metadata",
+                "usage": "Cell Metadata"
+            },
+            "gene_metadata": {
+                "type": "gene_metadata",
+                "usage": "Gene Metadata"
+            }
+        },
+        "output": {
+            "index": {
+                "type": "output_only",
+                "usage": "Analysis report",
+                "file_name": "index.html"
+            },
+            "RData": {
+                "type": "output_only",
+                "usage": "Analysis results (as RData)",
+                "file_name": "results.RData"
+            }
+        },
+        "type": "Calculation"
+    },
+    "schema": "1.0.0"
+}

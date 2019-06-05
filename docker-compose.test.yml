@@ -1,0 +1,15 @@
+version: '3'
+# This file is for local development purposes and continuous integration.
+# FASTGenomics does not need to see this file.
+services:
+  sut:
+    build: .
+    volumes:
+      - ./tests/sample_data/config:/fastgenomics/config/:ro
+      - ./tests/sample_data/data:/fastgenomics/data/:ro
+      - ./tests/sample_data/output:/fastgenomics/output/
+      - ./tests/sample_data/summary:/fastgenomics/summary/
+    entrypoint: Rscript /app/main.R
+  ci_test:
+    build: .
+    entrypoint: echo FASTGenomics

@@ -1,0 +1,542 @@
+---
+title: "FASTGenomics/LIMES Standard Workflow"
+author: "FASTGenomics Team and LIMES"
+date: "2019/06/03"
+output:
+  html_document:
+    theme: cosmo
+    code_download: true
+    code_folding: hide
+    toc: yes
+    toc_depth: 6
+    toc_float: yes
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = FALSE, cache.path = "/fastgenomics/output/cache/")
+```
+
+# Load Libraries and Set Parameters
+This step loads all required libraries, sets the calculation parameters and fixes the random seed.
+
+```{r}
+# Fix random seed
+set.seed(42)
+# Load FASTGenomics
+setwd(tempdir())
+library(fastgenomicsR)
+fg <- fastgenomicsR::Process()
+
+# Load Libraries
+library(Seurat)
+library(data.table)
+library(Matrix)
+library(ggplot2)
+library(stringr)
+library(SingleR)
+library(clusterProfiler)
+require(data.table)
+require(dplyr)
+require(tidyr)
+require(pheatmap)
+library(ggthemes)
+require(ggbeeswarm)
+require(scales)
+require(org.Hs.eg.db)
+library(RColorBrewer)
+
+# Set parameters
+min_genes <- 150
+max_genes <- 2500
+min_cells <- 3
+gene_pattern_exclusion <- "MT"
+gene_types <- "all"
+metacolumns <- c("Sample") # select the columns of the cell metdata information that you would like to consider in derail in your analysis
+
+# Set color codes for singleR
+color_code_singleR <- c("CD4+ T-cells" = "#c4c1e1",
+                "CD4+ Tcm" = "#776fb2",
+                "CD4+ Tem" = "#c4c1e1",
+                "CD8+ T-cells" = "#422483",
+                "CD8+ Tcm" = "#44378d",
+                "CD8+ Tem" = "#8284bf",
+                "Tregs" = "#004c9d",
+                "NKT cells" = "#684495",
+                "NK cells" = "#338eb0",
+                "ILCs" = "#d9dada",
+                "B-cells" = "#00963f",
+                "Memory B-cells" = "#32ab6d",
+                "Class-switched memory B-cells" = "#7dc29e",
+                "Plasma cells" = "#d5e7dd",
+                "HSC" = "#b3a930",
+                "MPP" = "#dfd200",
+                "CLP" = "#ffed00",
+                "CMP" = "#fdef6d",
+                "GMP" = "#faf3a8",
+                "MEP" = "#e7bd00",
+                "Megakaryocytes" = "#efd873",
+                "DC" = "#ef7c00",
+                "Monocytes" = "#e6330f",
+                "Eosinophils" = "#00af9d",
+                "Neutrophils" = "#87cbbe",
+                "Basophils" = "#cae6e4",
+                "Macrophages M1" = "#b41909",
+                "Macrophages" = "#b41909",
+                "Erythrocytes" = "#bb79b2",
+                "Adipocytes" = "#e2a9cd",
+                "Fibroblasts" = "#be348b",
+                "Endothelial cells" = "#7d2685",
+                "mv Endothelial cells" = "#632282")
+
+```
+
+# Data Import
+Loads data into Seurat object through the FASTGenomics interface.
+
+```{r}
+# Load cell data, gene and cell metadata in R. Read sparse data format as
+#downloaded from FASTGenomics (cellId, geneID, expression)
+cell_meta <- read.table(fg@input$cell_metadata@path, sep="\t", header=T)
+rownames(cell_meta) <- cell_meta$cellId
+cell_meta$cell_idx = seq(nrow(cell_meta))
+
+gene_meta <- read.table(fg@input$gene_metadata@path, sep="\t", header=T)
+rownames(gene_meta) <- gene_meta$geneId
+gene_meta$gene_idx = seq(nrow(gene_meta))
+
+expr <- read.table(fg@input$expression_matrix@path, sep="\t", header=T)
+expr <- merge(x=merge(x=expr, y = cell_meta[,c("cell_idx", "cellId")], by = "cellId", all.x = TRUE), y=gene_meta[,c("geneId", "gene_idx")], by="geneId", all.x = TRUE)
+
+expr_sparse <- sparseMatrix(
+  i = expr$gene_idx,
+  j = expr$cell_idx,
+  x = expr$expression,
+  dims = c(nrow(gene_meta), nrow(cell_meta))
+)
+colnames(expr_sparse) <- cell_meta$cellId
+rownames(expr_sparse) <- gene_meta$geneId
+
+# Create Seurat object
+seurat <- CreateSeuratObject(counts = expr_sparse,
+       min.cells = 0,
+       min.features = 0,
+       project = "10X_3k")
+
+cell_meta <- cell_meta[colnames(seurat),]
+gene_meta <- gene_meta[rownames(seurat),]
+
+# Add cell metadata to Seurat object
+seurat <- AddMetaData(seurat,
+                      metadata = cell_meta)
+
+# Add gene metadata to Seurat object
+seurat@assays$RNA@meta.features <- gene_meta
+
+# Add additional information (misc) and calculation parameters to Seurat object
+seurat@misc <- list("min_genes" = min_genes,
+                    "max_genes" = max_genes,
+                    "min_cells" = min_cells,
+                    "gene_pattern_exclusion" = gene_pattern_exclusion,
+                    "gene_types" = gene_types,
+                    "metacolumns" = c("Sample"))
+```
+
+# QC Plots on Raw Data
+Quality control on the raw, pre-filtered data.
+
+## Cell and gene count
+
+```{r, results='asis'}
+n_genes <- dim(seurat)[1]
+n_cells <- dim(seurat)[2]
+cat(stringr::str_interp("There are __${n_genes}__ genes and __${n_cells}__ barcodes in the data set."))
+```
+
+## Genes per Cell
+Distribution of genes per cell for each sample.
+
+```{r}
+ggplot(seurat@meta.data, aes(y = nFeature_RNA, x = Sample)) +
+  geom_jitter(alpha = 0.5, size = 0.5, aes(colour = Sample)) +
+  geom_violin(fill = "grey", alpha = 0.5, draw_quantiles =  c(0.25, 0.5, 0.75)) +
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        legend.position = "none") +
+    scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  scale_y_continuous(trans = "log10") +
+  ylab("Genes per cell") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ggtitle("Genes per cell per sample")
+```
+
+## Gene Overview {.tabset}
+Plot highest expressed genes, Mitochondrial gene counts, and Ribosomal gene counts.
+
+```{r}
+# Calculate gene metrics
+Idents(object = seurat) <- "Sample"
+seurat[['percent.mito']] <- PercentageFeatureSet(seurat, pattern = "^MT-")
+seurat[['percent.Rb']] <- PercentageFeatureSet(seurat, pattern = "^RPL|^RPS|^MRPL|^MRPS")
+```
+
+### Highest Expressed Genes {-}
+Raw UMI counts of the 20 highest expressed genes.
+
+```{r, NAME="TAB 3 (chunk 15)"}
+data <- GetAssayData(seurat, slot = "counts")
+data <- data[order(Matrix::rowSums(data), decreasing = T),]
+data <- data[1:20,]
+data <- as.data.frame(as.matrix(data))
+data$gene <- rownames(data)
+data <- melt(data)
+colnames(data) <- c("gene", "cell", "value")
+data$gene <- factor(data$gene, levels = rev(unique(data$gene)))
+
+ggplot(data, aes(x = gene, y = value)) +
+      geom_boxplot(outlier.size = 0.5)+
+      scale_y_continuous()+
+      xlab("Gene")+
+      ylab("Raw UMI Counts")+
+      ggtitle(paste("Counts of 20 highest expressed genes")) +
+      theme_bw() +
+      coord_flip() +
+      theme(axis.text.x = element_text(size=12, angle = 90, hjust = 1),
+            plot.title = element_text(size = 12, face = "bold"))
+```
+
+
+### Mitochondrial Genes {-}
+Mitochondrial gene proportion per Sample.
+
+```{r, NAME="Mito"}
+VlnPlot(seurat, features = c("percent.mito")) + labs(title = "Percentage of mitochondiral genes")
+```
+
+### Ribosomal Genes {-}
+Ribosomal gene proportion per sample.
+
+```{r, NAME="Ribo"}
+VlnPlot(seurat, features = c("percent.Rb")) + labs(title = "Percentage of ribosomal genes")
+```
+
+# Filtering
+Only keep cells and genes based on the following criteria: 
+
+- Cells 
+    - More than 150 genes expressed
+    - Less than 2500 genes expressed
+    - Mitochondrial genes make up less than 10 % of all counts 
+- Genes
+    - Expressed in more than 5 cells
+    - Gene is not encoding a (mitochondrial) ribosomal protein
+
+
+```{r, NAME="APP 3"}
+# Cells with min 150 genes max 2500 genes and less than 10% mitochondrial genes
+cells_to_keep <- rownames(seurat@meta.data[seurat@meta.data$nFeature_RNA > 150 &
+                            seurat@meta.data$nFeature_RNA < 2500 &
+                            seurat@meta.data$percent.mito < 10,])
+
+# Genes that are expressed in min 5 cells
+genes_to_keep <- Matrix::rowSums(GetAssayData(seurat, slot = "counts") > 0) > 5
+genes_to_keep <- names(genes_to_keep[genes_to_keep])
+
+# exclude ribosomal and mitochondrial ribosomal proteins
+genes_to_keep <- genes_to_keep[!grepl(pattern = "^RPL|^RPS|^MRPS|^MRPL", genes_to_keep)]
+
+expr <- GetAssayData(seurat, slot = "counts")
+expr_filt <- expr[rownames(expr) %in% genes_to_keep, colnames(expr) %in% cells_to_keep]
+
+seurat <- CreateSeuratObject(counts = expr_filt, meta.data = seurat@meta.data)
+```
+
+# QC Plots on Filtered Data
+Quality control on the filtered data.
+
+## Cell and gene count
+
+```{r, results='asis'}
+n_genes <- dim(seurat)[1]
+n_cells <- dim(seurat)[2]
+cat(stringr::str_interp("There are __${n_genes}__ genes and __${n_cells}__ cells in the filtered data set."))
+```
+
+
+## Genes per Cell
+Distribution of genes per cell for each sample.
+
+```{r, NAME="Tab 2"}
+ggplot(seurat@meta.data, aes(y = nFeature_RNA, x = Sample)) +
+  geom_jitter(alpha = 0.5, size = 0.5, aes(colour = Sample)) +
+  geom_violin(fill = "grey", alpha = 0.5, draw_quantiles =  c(0.25, 0.5, 0.75)) +
+  theme(axis.ticks.x = element_blank(),
+        axis.text.x = element_blank(),
+        legend.position = "none") +
+    scale_color_viridis_d() +
+  scale_fill_viridis_d() +
+  scale_y_continuous(trans = "log10") +
+  ylab("Genes per cell") +
+  theme_bw() +
+  theme(legend.position = "none") +
+  ggtitle("Plot 1: Genes per cell per sample")
+
+```
+
+## Gene Overview {.tabset}
+Plot highest expressed genes, Mitochondrial gene counts, and Ribosomal gene counts.
+
+```{r}
+# Calculate gene metrics
+Idents(object = seurat) <- "Sample"
+seurat[['percent.mito.filtered']] <- PercentageFeatureSet(seurat, pattern = "^MT-")
+seurat[['percent.Rb.filtered']] <- PercentageFeatureSet(seurat, pattern = "^RPL|^RPS|^MRPL|^MRPS")
+```
+
+### Highest Expressed Genes {-}
+Raw UMI counts of the 20 highest expressed genes.
+
+```{r, NAME="TAB 3 (chunk 15)"}
+data <- GetAssayData(seurat, slot = "counts")
+data <- data[order(Matrix::rowSums(data), decreasing = T),]
+data <- data[1:20,]
+data <- as.data.frame(as.matrix(data))
+data$gene <- rownames(data)
+data <- melt(data)
+colnames(data) <- c("gene", "cell", "value")
+data$gene <- factor(data$gene, levels = rev(unique(data$gene)))
+
+ggplot(data, aes(x = gene, y = value)) +
+      geom_boxplot(outlier.size = 0.5)+
+      scale_y_continuous()+
+      xlab("Gene")+
+      ylab("Raw UMI Counts")+
+      ggtitle(paste("Counts of 20 highest expressed genes")) +
+      theme_bw() +
+      coord_flip() +
+      theme(axis.text.x = element_text(size=12, angle = 90, hjust = 1),
+            plot.title = element_text(size = 12, face = "bold"))
+```
+
+
+### Mitochondrial Genes {-}
+Mitochondrial gene proportion per Sample.
+
+```{r, NAME="Mito_post"}
+VlnPlot(seurat, features = c("percent.mito.filtered")) + labs(title = "Percentage of mitochondiral genes")
+```
+
+### Ribosomal Genes {-}
+Ribosomal gene proportion per sample.
+
+```{r, NAME="Ribo_post"}
+VlnPlot(seurat, features = c("percent.Rb.filtered")) + labs(title = "Percentage of ribosomal genes")
+```
+
+# Normalizing the Data
+Normalize the data with method "LogNormalize" to a scale factor of 10,000.
+
+```{r, NAME="APP 5"}
+seurat <- NormalizeData(object = seurat, normalization.method = "LogNormalize", scale.factor = 1e4)
+```
+
+# Identification of Highly Variable Genes
+
+```{r, fig.width= 12, NAME="APP 6", results = 'asis'}
+seurat <- FindVariableFeatures(object = seurat, selection.method = 'mean.var.plot', mean.cutoff = c(0.0125, 3), dispersion.cutoff = c(0.5, Inf))
+n_variable <- length(x = VariableFeatures(object = seurat))
+cat(stringr::str_interp("There are __${n_variable}__ highly variable genes identified in the data set."))
+```
+
+# Scaling the Data
+Linear transformation necessary for the downstream dimensionality reduction steps.
+
+```{r, NAME="APP 7"}
+seurat <- ScaleData(object = seurat,
+                    features = rownames(x = seurat),
+                    vars.to.regress = c("nCount_RNA"))
+```
+
+# Dimensionality Reduction
+
+## Principal Component Analysis
+
+### Component Loadings
+Plots how much variance is explained by each PC.
+
+```{r, NAME="PCA"}
+# Calculation
+seurat <- RunPCA(object = seurat, features = VariableFeatures(object = seurat), verbose = FALSE)
+# Visualization ElbowPlot
+ElbowPlot(object = seurat)
+```
+
+### Gene Loadings per Prinicpal Components {.tabset}
+Contribution (positive/negative) of single genes to PCs.
+
+```{r, NAME="PCA loadings tab", results='asis'}
+n_dims <- 10
+
+gen_tab <- function(title, level=4){
+  header <- strrep("#",level)
+  stringr::str_interp("${header} ${title} {-}\n\n")
+}
+
+for (pc in 1:n_dims){
+  cat(gen_tab(paste0("PC ", pc), level=4))
+  cat(DimHeatmap(object = seurat, dims = pc, cells = 500, balanced = TRUE), sep="\n")
+  cat("\n\n")
+}
+
+cat(gen_tab("RAW Data", level=4))
+PC_raw <- capture.output(print(x = seurat[['pca']], dims = 1:n_dims, nfeatures = 10, projected = FALSE))
+cat(PC_raw, sep="  \n")
+#print(x = seurat[['pca']], dims = 1:n_dims, nfeatures = 10, projected = FALSE)
+```
+
+## UMAP Calculation
+```{r, NAME="APP9 UMAP"}
+seurat <- RunUMAP(seurat, reduction.use = "pca", dims = 1:10)
+DimPlot(object = seurat, reduction = "umap") +
+  labs(title = "UMAP representation of 2,700 PBMCs") + NoLegend()
+```
+
+
+# Clustering
+Identify clusters of similar cell in the data with the Louvain algorithm based on the first 10 PCs.
+Cluster similarity is shown as a cluster tree.
+
+```{r, NAME="APP Cluster"}
+seurat <- FindNeighbors(object = seurat, dims = 1:10)
+seurat <- FindClusters(object = seurat, resolution = 0.8, algorithm = 4)
+
+# Plot cluster tree
+seurat <- BuildClusterTree(seurat)
+PlotClusterTree(seurat, main="Cluster Tree")
+```
+
+## Plot UMAP with Cluster information
+```{r, NAME="Viz Cluster"}
+Idents(object = seurat) <- "RNA_snn_res.0.8"
+DimPlot(object = seurat, reduction = "umap") +
+  labs(title = "UMAP representation of 2,700 PBMCs colored by clusters")
+```
+
+# Cell Type Annotation
+
+## SingleR
+SingleR main types from Blueprint_Encode are used for annotation.
+
+```{r, message = FALSE, echo = TRUE, warning=FALSE, results = "hide", NAME="APP 11"}
+input <- GetAssayData(object = seurat, slot = 'counts')
+
+singleR_seurat <- CreateSinglerObject(counts= input,
+                                      annot = NULL,
+                                      min.genes = 0,
+                                      project.name = "10X_3k",
+                                      technology = "10X",
+                                      species = "Human",
+                                      ref.list =  list(),
+                                      normalize.gene.length = F,
+                                      variable.genes = "de",
+                                      fine.tune = F,
+                                      do.signatures = F,
+                                      do.main.types = T,
+                                      reduce.file.size = T,
+                                      numCores = 30)
+
+singleR_seurat$seurat = seurat
+singleR_seurat$meta.data$orig.ident = seurat$orig.ident
+singleR_seurat$meta.data$clusters = seurat$RNA_snn_res.0.8
+
+seurat[['BluePrintEncode']] <- singleR_seurat$singler[[2]]$SingleR.single.main$labels[,1]
+
+Idents(object = seurat) <- "BluePrintEncode"
+DimPlot(object = seurat, reduction = "umap") +
+  scale_color_manual(values = color_code_singleR) +
+  labs(title = "SingleR cell types (BluePrint Encode) on UMAP")
+```
+
+```{r, fig.width=6, fig.height=6, NAME="Tab 3"}
+Idents(object = seurat) <- "RNA_snn_res.0.8"
+
+tmp <- data.frame(Sample = seurat$Sample,
+                  Cluster = seurat@active.ident,
+                  Celltype = seurat$BluePrintEncode)
+
+
+ggplot(tmp, aes(Cluster))+
+  geom_bar(aes(fill = Celltype),position = "fill")+
+  ggtitle("Percentage of cells from each cell type per cluster")+
+  scale_fill_manual(values = color_code_singleR) +
+  theme_bw()
+```
+
+
+# Differentially Expressed (DE) Genes Analysis
+Identify genes that are differentially expressed between the clusters.
+
+## Heatmap of Cluster DE-genes
+
+Heatmap of top 10 marker genes for each cluster.
+
+```{r, fig.height= 10, fig.width= 8, NAME="Marker Gene Heatmap"}
+Idents(object = seurat) <- "RNA_snn_res.0.8"
+seurat.markers <- FindAllMarkers(object = seurat, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+seurat.markers %>% group_by(cluster) %>% top_n(n = 10, wt = avg_logFC) -> top10
+
+DoHeatmap(object = seurat, features = top10$gene, angle = 0, size = 4) +
+   scale_fill_gradientn(colors = c("blue", "white", "red")) +
+  NoLegend()
+```
+
+## Violinplots of DE-genes per Cluster {.tabset}
+
+Display top 3 cluster DE-genes as violin plots for each cluster.
+
+```{r, NAME="Marker Gene Violinplots", results='asis'}
+top3 <- seurat.markers %>%
+  group_by(cluster) %>%
+  top_n(n = 3, wt = avg_logFC)
+
+gen_tab <- function(title, level=3){
+  header <- strrep("#",level)
+  stringr::str_interp("${header} ${title} {-}\n\n")
+}
+
+for (cluster in unique(unlist(top3['cluster'], use.names=F)))
+{
+  cat(gen_tab(paste0("Cluster ", cluster), level=3))
+  marker_cluster <- top3[top3['cluster']==cluster, ]
+  for (gene in unlist(marker_cluster['gene'], use.names=F))
+  {
+    print(VlnPlot(object = seurat, features = gene) + 
+      theme(legend.position="none") + labs(title = gene))
+      cat("\n\n")
+  }
+}
+```
+
+## Table of DE-genes per Cluster
+
+```{r, NAME="APP 12a"}
+Idents(object = seurat) <- "RNA_snn_res.0.8"
+
+seurat.markers %>%
+  group_by(cluster) %>%
+  top_n(n = 10, wt = avg_logFC) %>%
+  DT::datatable()
+```
+
+# Appendix
+Exporting the R workspace for further manual analysis and print dependencies and session information.
+
+```{r, NAME="Image"}
+save.image(fg@output$RData@path)
+```
+
+```{r, NAME="Session Info"}
+sessionInfo()
+```
