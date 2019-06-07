@@ -10,4 +10,3 @@ services:
       - ./tests/sample_data/pbmc_3k/data:/fastgenomics/data/:ro
       - ./tests/sample_data/pbmc_3k/output:/fastgenomics/output/
       - ./tests/sample_data/pbmc_3k/summary:/fastgenomics/summary/
-    command:  Rscript /app/main.R
