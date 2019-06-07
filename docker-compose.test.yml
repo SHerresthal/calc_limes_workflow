@@ -1,15 +1,13 @@
 version: '3'
-# This file is for local development purposes and continuous integration.
-# FASTGenomics does not need to see this file.
+
 services:
   sut:
     build: .
+    environment:
+      - KNITR_CACHE 1
     volumes:
-      - ./tests/sample_data/config:/fastgenomics/config/:ro
-      - ./tests/sample_data/data:/fastgenomics/data/:ro
-      - ./tests/sample_data/output:/fastgenomics/output/
-      - ./tests/sample_data/summary:/fastgenomics/summary/
-    entrypoint: Rscript /app/main.R
-  ci_test:
-    build: .
-    entrypoint: echo FASTGenomics
+      - ./tests/sample_data/pbmc_3k/config:/fastgenomics/config/:ro
+      - ./tests/sample_data/pbmc_3k/data:/fastgenomics/data/:ro
+      - ./tests/sample_data/pbmc_3k/output:/fastgenomics/output/
+      - ./tests/sample_data/pbmc_3k/summary:/fastgenomics/summary/
+    command:  Rscript /app/main.R

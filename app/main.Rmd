@@ -14,7 +14,9 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = FALSE, cache.path = "/fastgenomics/output/cache/")
+KNITR_CACHE = Sys.getenv("KNITR_CACHE", FALSE)
+if (KNITR_CACHE != FALSE) {KNITR_CACHE=TRUE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = KNITR_CACHE, cache.path = "/fastgenomics/output/cache/")
 ```
 
 # Load Libraries and Set Parameters
