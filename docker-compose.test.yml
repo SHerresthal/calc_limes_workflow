@@ -2,11 +2,18 @@ version: '3'
 
 services:
   sut:
+    # disable CI tests on docker-hub for now.  no data set is available in the
+    # repository to run it on.
+    build: .
+    command: echo
+
+  test-pbmc3k:
     build: .
     environment:
-      - KNITR_CACHE 1
+      - KNITR_CACHE
     volumes:
       - ./tests/sample_data/pbmc_3k/config:/fastgenomics/config/:ro
       - ./tests/sample_data/pbmc_3k/data:/fastgenomics/data/:ro
       - ./tests/sample_data/pbmc_3k/output:/fastgenomics/output/
       - ./tests/sample_data/pbmc_3k/summary:/fastgenomics/summary/
+      - ./app:/app:ro

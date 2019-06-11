@@ -15,8 +15,8 @@ output:
 
 ```{r setup, include=FALSE}
 KNITR_CACHE = Sys.getenv("KNITR_CACHE", FALSE)
-if (KNITR_CACHE != FALSE) {KNITR_CACHE=TRUE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, cache = KNITR_CACHE, cache.path = "/fastgenomics/output/cache/")
+if (KNITR_CACHE != FALSE) {KNITR_CACHE=TRUE} else {KNITR_CACHE=FALSE}
+knitr::opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, cache=KNITR_CACHE, cache.path="/fastgenomics/output/cache/")
 ```
 
 # Load Libraries and Set Parameters
@@ -26,7 +26,6 @@ This step loads all required libraries, sets the calculation parameters and fixe
 # Fix random seed
 set.seed(42)
 # Load FASTGenomics
-setwd(tempdir())
 library(fastgenomicsR)
 fg <- fastgenomicsR::Process()
 
