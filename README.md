@@ -66,14 +66,21 @@ version: '3'
 
 services:
   sut:
+    # disable CI tests on docker-hub for now.  no data set is available in the
+    # repository to run it on.
+    build: .
+    command: echo
+
+  test-pbmc3k:
     build: .
     environment:
-      - KNITR_CACHE 1
+      - KNITR_CACHE             # enable cache for faster builds
     volumes:
       - ./tests/sample_data/pbmc_3k/config:/fastgenomics/config/:ro
       - ./tests/sample_data/pbmc_3k/data:/fastgenomics/data/:ro
       - ./tests/sample_data/pbmc_3k/output:/fastgenomics/output/
       - ./tests/sample_data/pbmc_3k/summary:/fastgenomics/summary/
+      - ./app:/app:ro           # mount the app directory to avoid rebuilding the image
 ```
 
 If the variable `KNITR_CACHE` is defined, knitr will cache the intermediate results and
@@ -82,8 +89,12 @@ encounter any errors.
 
 To run the app simply execute
 ``` bash
-docker-compose -f docker-compose.test.yml up --build
+docker-compose -f docker-compose.test.yml run test-pbmc3k
 ```
-(you only need to use the `--build` if you make changes to the app).
 
 After knitr runs through, your outputs should be under `tests/sample_data/pbmc_3k/output/index.html`.
+
+### Finishing touches
+Once you are done making changes and happy with the results try rebuilding the image
+with the correct app, and running the `test-pbmc3k` service without the `KNITR_CACHE`
+(this is the default) and without mounting the `./app` volume.

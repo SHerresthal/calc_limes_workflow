@@ -10,10 +10,10 @@ services:
   test-pbmc3k:
     build: .
     environment:
-      - KNITR_CACHE
+      - KNITR_CACHE=1             # enable cache for faster builds
     volumes:
       - ./tests/sample_data/pbmc_3k/config:/fastgenomics/config/:ro
       - ./tests/sample_data/pbmc_3k/data:/fastgenomics/data/:ro
       - ./tests/sample_data/pbmc_3k/output:/fastgenomics/output/
       - ./tests/sample_data/pbmc_3k/summary:/fastgenomics/summary/
-      - ./app:/app:ro
+      - ./app:/app:ro           # mount the app directory to avoid rebuilding the image
