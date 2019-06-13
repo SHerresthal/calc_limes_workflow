@@ -16,4 +16,4 @@ services:
       - ./tests/sample_data/pbmc_3k/data:/fastgenomics/data/:ro
       - ./tests/sample_data/pbmc_3k/output:/fastgenomics/output/
       - ./tests/sample_data/pbmc_3k/summary:/fastgenomics/summary/
-      - ./app:/app:ro           # mount the app directory to avoid rebuilding the image
+      # - ./app:/app:ro           # mount the app directory to avoid rebuilding the image
